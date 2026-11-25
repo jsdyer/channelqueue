@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {parseInput,parseTimestamp,timestamp,isoDuration,normalizeVideo,fresh,filterVideos,bookmark,bookmarkId,addBookmark,reorder,emptyWorkspace,validateWorkspace,METADATA_TTL,watchURL} from '../web/model.mjs';
+import {parseInput,parseTimestamp,timestamp,isoDuration,normalizeVideo,fresh,filterVideos,bookmark,bookmarkId,addBookmark,reorder,emptyWorkspace,validateWorkspace,METADATA_TTL,watchURL,serializedWorkspace,MAX_FILE_BYTES} from '../web/model.mjs';
 const id='abcdefghijk',other='ABCDEFGHIJK',channel='UCabcdefghijklmnopqrstuv';
 const raw={id,snippet:{title:'A <b>lesson</b>',channelTitle:'Teacher',description:'Networks',thumbnails:{medium:{url:'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg'}}},contentDetails:{duration:'PT1H2M3S'},status:{embeddable:true,madeForKids:false}};
 test('accepts arbitrary valid video URL formats',()=>{for(const value of [id,`https://youtu.be/${id}`,`https://www.youtube.com/watch?v=${id}&list=PL123456789012`,`https://m.youtube.com/shorts/${id}`,`https://youtube.com/live/${id}`])assert.deepEqual(parseInput(value),{type:'video',id});});
@@ -17,3 +17,5 @@ test('workspace roundtrip contains user data and removes imported API metadata',
 test('invalid workspace imports cannot replace valid user records',()=>{assert.throws(()=>validateWorkspace({version:2}));assert.throws(()=>validateWorkspace({...emptyWorkspace(),bookmarks:[bookmark(id),bookmark(id)]}));assert.throws(()=>validateWorkspace({...emptyWorkspace(),bookmarks:[{...bookmark(id),notes:[{time:-2,text:'bad'}]}]}));assert.throws(()=>validateWorkspace({...emptyWorkspace(),sources:[{url:'https://evil.test'}]}));});
 test('timestamp links only use canonical YouTube video IDs',()=>{assert.equal(watchURL(id,90),`https://www.youtube.com/watch?v=${id}&t=90s`);});
 test('starter configuration expands without fixed topic assumptions',()=>{const c=JSON.parse(fs.readFileSync(new URL('../web/config.json',import.meta.url)));const expanded=[...c.starter_topics,'Urban gardening'];assert.equal(expanded.length,c.starter_topics.length+1);assert.ok(c.max_loaded_videos>=50);assert.equal(parseInput('@urban_gardening').handle,'@urban_gardening');});
+
+test('one serialized UTF-8 budget protects exported backup roundtrips',()=>{const w={...emptyWorkspace(),bookmarks:[{...bookmark(id),notes:Array.from({length:201},()=>({time:0,text:'x'.repeat(10000)}))}]};assert.throws(()=>serializedWorkspace(w),/2 MB/);assert.throws(()=>validateWorkspace(w),/2 MB/);const small={...emptyWorkspace(),bookmarks:[{...bookmark(id),notes:[{time:0,text:'😀'.repeat(1000)}]}]};const data=serializedWorkspace(small);assert.ok(new TextEncoder().encode(data).length<=MAX_FILE_BYTES);assert.deepEqual(validateWorkspace(JSON.parse(data)),small);});
