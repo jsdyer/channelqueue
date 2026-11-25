@@ -1,16 +1,16 @@
 {
-  "id": "coolcode-tool-template",
-  "title": "CoolCode Tool Starter",
-  "description": "A browser-only example that trims lines and removes exact duplicates.",
-  "category": "security",
-  "tags": ["text", "lines", "duplicates"],
-  "icon": "scan-search",
-  "url": "/coolcode-tool-template/",
-  "source": "https://github.com/jsdyer/coolcode-tool-template",
+  "id": "channelqueue",
+  "title": "Channel Queue",
+  "description": "Turn public YouTube videos, channels and playlists into a private learning queue with topics and timestamp notes.",
+  "category": "media",
+  "tags": ["YouTube", "video", "learning", "notes", "playlists"],
+  "icon": "film",
+  "url": "/channelqueue/",
+  "source": "https://github.com/jsdyer/channelqueue",
   "hosting": "project",
   "access": "browser",
   "data_info": {
-    "mode": "local",
-    "detail": "The browser reads the text you paste and compares its lines."
+    "mode": "mixed",
+    "detail": "YouTube Data API supplies public metadata on request. Bookmarks, topics and timestamp notes stay on your device; playback uses YouTube’s official player."
   }
 }

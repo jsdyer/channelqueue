@@ -1,0 +1,5 @@
+{
+  "api_base": "https://coolcode-visitor-api.jeffdyer.workers.dev",
+  "starter_topics": ["Space science", "Linux learning", "Travel research", "Cooking techniques"],
+  "max_loaded_videos": 500
+}

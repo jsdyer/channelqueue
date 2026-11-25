@@ -1,21 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanLines } from '../web/model.mjs';
-test('trims, removes blanks and preserves first-seen order', () => {
-  assert.deepEqual(cleanLines('  Halifax\nLangley\nHalifax\n\nVancouver  '), {
-    text: 'Halifax\nLangley\nVancouver', count: 3, removed: 1,
-  });
-});
-test('supports Windows and old Mac line endings', () => {
-  assert.equal(cleanLines('a\r\nb\ra').text, 'a\nb');
-});
-test('empty text and whitespace produce an empty result', () => {
-  assert.deepEqual(cleanLines(' \n\t'), { text: '', count: 0, removed: 0 });
-});
-test('preserves case and Unicode', () => {
-  assert.equal(cleanLines('Québec\nquébec\n東京\nQuébec').text, 'Québec\nquébec\n東京');
-});
-test('treats markup as ordinary text', () => {
-  assert.equal(cleanLines('<script>alert(1)</script>\n<script>alert(1)</script>').text, '<script>alert(1)</script>');
-});
-test('rejects non-text input', () => { assert.throws(() => cleanLines(null), TypeError); });
+import fs from 'node:fs';
+import {parseInput,parseTimestamp,timestamp,isoDuration,normalizeVideo,fresh,filterVideos,bookmark,bookmarkId,addBookmark,reorder,emptyWorkspace,validateWorkspace,METADATA_TTL,watchURL} from '../web/model.mjs';
+const id='abcdefghijk',other='ABCDEFGHIJK',channel='UCabcdefghijklmnopqrstuv';
+const raw={id,snippet:{title:'A <b>lesson</b>',channelTitle:'Teacher',description:'Networks',thumbnails:{medium:{url:'https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg'}}},contentDetails:{duration:'PT1H2M3S'},status:{embeddable:true,madeForKids:false}};
+test('accepts arbitrary valid video URL formats',()=>{for(const value of [id,`https://youtu.be/${id}`,`https://www.youtube.com/watch?v=${id}&list=PL123456789012`,`https://m.youtube.com/shorts/${id}`,`https://youtube.com/live/${id}`])assert.deepEqual(parseInput(value),{type:'video',id});});
+test('channels and playlist references are structurally validated',()=>{assert.deepEqual(parseInput('@marine_learner'),{type:'channel',handle:'@marine_learner'});assert.deepEqual(parseInput(`https://youtube.com/channel/${channel}`),{type:'channel',id:channel});assert.deepEqual(parseInput('https://www.youtube.com/playlist?list=PL123456789012345'),{type:'playlist',id:'PL123456789012345'});});
+test('unsupported and hostile sources cannot become gateway URLs',()=>{for(const value of ['javascript:alert(1)','https://youtube.com.evil.test/watch?v=abcdefghijk','https://user:pass@youtube.com/watch?v=abcdefghijk','https://example.org','https://youtube.com/c/legacy','http://127.0.0.1/private'])assert.throws(()=>parseInput(value));});
+test('timestamps preserve user intent and reject invalid clock components',()=>{assert.equal(parseTimestamp('90'),90);assert.equal(parseTimestamp('1:30'),90);assert.equal(parseTimestamp('1:02:03'),3723);assert.equal(timestamp(3723),'1:02:03');for(const v of ['-1','1:99','12:60:00','seven','9999999'])assert.throws(()=>parseTimestamp(v));});
+test('ISO durations distinguish unknown/live length from a real duration',()=>{assert.equal(isoDuration('PT1H2M3S'),3723);assert.equal(isoDuration('P1DT2H'),93600);assert.equal(isoDuration('PT0S'),null);assert.equal(isoDuration('12 minutes'),null);});
+test('metadata normalization requires official safe image hosts and explicit playback flags',()=>{const m=normalizeVideo(raw,1000);assert.equal(m.title,'A lesson');assert.equal(m.embeddable,true);assert.equal(m.madeForKids,false);assert.equal(normalizeVideo({id,snippet:{thumbnails:{medium:{url:'https://evil.test/pixel'}}}}).thumbnail,'');assert.equal(normalizeVideo({id}).madeForKids,null);assert.equal(normalizeVideo({id:'bad'}),null);});
+test('metadata expires inside thirty days including future clock anomalies',()=>{const m=normalizeVideo(raw,1000);assert.ok(fresh(m,1001));assert.equal(fresh(m,1000+METADATA_TTL),null);assert.equal(fresh(m,-400000),null);});
+test('filters use real durations with explicit missing-length option',()=>{const short={...normalizeVideo(raw),duration:1200},unknown={...short,id:other,duration:null};assert.equal(filterVideos([short,unknown],{max:20,unknown:false}).length,1);assert.equal(filterVideos([short,unknown],{max:10,unknown:true}).length,1);assert.equal(filterVideos([short],{query:'networks'}).length,1);assert.equal(filterVideos([short],{query:'cooking'}).length,0);assert.throws(()=>filterVideos([short],{max:-1}));});
+test('queue bookmarks deduplicate and reorder',()=>{const a=bookmark(id),b=bookmark(other);assert.equal(addBookmark([a],id).length,1);assert.deepEqual(reorder([a,b],0,1),[b,a]);assert.deepEqual(reorder([a],0,-1),[a]);assert.equal(bookmarkId(a),id);});
+test('workspace roundtrip contains user data and removes imported API metadata',()=>{const b={...bookmark(id),label:'My label',topic:'Networking',position:90,complete:true,notes:[{time:40,text:'<b>My own note</b>'}],title:'Unwanted API title',thumbnail:'https://i.ytimg.com/x',fetchedAt:12};const w=validateWorkspace({...emptyWorkspace(),bookmarks:[b],sources:[{url:'https://youtube.com/@marine_learner',label:'A source'}]});assert.equal(w.bookmarks[0].notes[0].text,'<b>My own note</b>');assert.equal(w.bookmarks[0].title,undefined);assert.equal(w.bookmarks[0].thumbnail,undefined);assert.deepEqual(validateWorkspace(JSON.parse(JSON.stringify(w))),w);});
+test('invalid workspace imports cannot replace valid user records',()=>{assert.throws(()=>validateWorkspace({version:2}));assert.throws(()=>validateWorkspace({...emptyWorkspace(),bookmarks:[bookmark(id),bookmark(id)]}));assert.throws(()=>validateWorkspace({...emptyWorkspace(),bookmarks:[{...bookmark(id),notes:[{time:-2,text:'bad'}]}]}));assert.throws(()=>validateWorkspace({...emptyWorkspace(),sources:[{url:'https://evil.test'}]}));});
+test('timestamp links only use canonical YouTube video IDs',()=>{assert.equal(watchURL(id,90),`https://www.youtube.com/watch?v=${id}&t=90s`);});
+test('starter configuration expands without fixed topic assumptions',()=>{const c=JSON.parse(fs.readFileSync(new URL('../web/config.json',import.meta.url)));const expanded=[...c.starter_topics,'Urban gardening'];assert.equal(expanded.length,c.starter_topics.length+1);assert.ok(c.max_loaded_videos>=50);assert.equal(parseInput('@urban_gardening').handle,'@urban_gardening');});
